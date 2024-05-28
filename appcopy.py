@@ -31,7 +31,11 @@ session = Session(engine)
 #################################################
 app = Flask(__name__)
 
+# Find the most recent date in the data set.
+recent_date = session.query(Measurement.date).order_by(Measurement.date.desc()).first()[0]
 
+# Calculate the date one year from the last date in data set.
+query_date = dt.datetime.strptime(recent_date, "%Y-%m-%d") - dt.timedelta(days=366)
 
 #################################################
 # Flask Routes
@@ -92,21 +96,37 @@ def tobs():
         group_by(Measurement.station).\
             order_by(func.count(Measurement.station).desc()).all()[0][0]
 
-    # Find the most recent date in the data set.
-    recent_date = session.query(Measurement.date).order_by(Measurement.date.desc()).first()[0]
-
-    # Calculate the date one year from the last date in data set.
-    query_date = dt.datetime.strptime(recent_date, "%Y-%m-%d") - dt.timedelta(days=366)
-
     # Query the last 12 months of temperature observation data for this station
-    last_12_months_temp = session.query(Measurement.tobs).\
+    last_12_months_temp = session.query(Measurement.date, Measurement.tobs).\
         filter(Measurement.date > query_date).\
             filter(Measurement.station == most_active_station).all()
-    # Convert list of tuples into normal list
-    all_temp = list(np.ravel(last_12_months_temp))
 
-    # Return a JSON list of stations from the dataset
-    return jsonify(all_temp)
+    session.close()
+
+    # Create a dictionary from the row data and append to a list of last_year_temp_list
+    last_year_temp_list = []
+    for date, temperature in last_12_months_temp:
+        tempt_dict= {}
+        tempt_dict["date"]= date
+        tempt_dict["temperature"]= temperature
+        last_year_temp_list.append(tempt_dict)
+
+    # Return the JSON representation of your dictionary
+    return jsonify(last_year_temp_list)
+
+
+@app.route("/api/v1.0/<start>")
+def temperature_by_start_date(start):
+    temp_stats = session.query(func.min(Measurement.tobs),
+                               func.max(Measurement.tobs),
+                               func.avg(Measurement.tobs)).filter(Measurement.date >= start).all()
+    session.close()
+
+    # Convert list of tuples into normal list
+    temp_start = list(np.ravel(temp_stats))
+
+     # Return the JSON representation of your dictionary
+    return jsonify(temp_start)
 
 if __name__ == '__main__':
     app.run(debug=True)
